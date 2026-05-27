@@ -20,96 +20,139 @@ from part1.cross_validation import cv_select_lambda
 from part1.residual_analysis import residual_plots
 
 def compute_metrics(y_true, y_pred):
-    # Tính các chỉ số MAE, RMSE và R-squared để so sánh mô hình
+    """
+    Tính toán các chỉ số đánh giá sai số của mô hình.
+    Dựa trên công thức: MAE, RMSE và R-squared.
+    """
     n = len(y_true)
-    mae = sum(abs(y_true[i] - y_pred[i]) for i in range(n)) / n
-    rmse = (sum((y_true[i] - y_pred[i])**2 for i in range(n)) / n) ** 0.5
     
-    ss_res = sum((y_true[i] - y_pred[i])**2 for i in range(n))
-    y_mean = sum(y_true) / n
-    ss_tot = sum((y_true[i] - y_mean)**2 for i in range(n))
-    r2 = 1 - ss_res / ss_tot
-    return mae, rmse, r2
+    # Tính Mean Absolute Error (MAE)
+    mae = np.sum(np.abs(y_true - y_pred)) / n
+    
+    # Tính Root Mean Squared Error (RMSE)
+    rmse = np.sqrt(np.sum((y_true - y_pred) ** 2) / n)
+    
+    # Tính R-squared (R2)
+    tss = np.sum((y_true - np.mean(y_true)) ** 2)
+    rss = np.sum((y_true - y_pred) ** 2)
+    r2 = 1 - (rss / tss) if tss != 0 else 0.0
+    
+    return float(mae), float(rmse), float(r2)
 
 
 def run_ols_baseline(X_train, X_test, y_train, y_test, feature_names):
-    # Chạy mô hình OLS chuẩn trên tập huấn luyện và in kết quả kiểm định hệ số
-    print("\n=== OLS BASELINE MODEL ===")
+    """
+    Xây dựng mô hình OLS cơ bản trên tất cả đặc trưng và kiểm định hệ số.
+    """
+    print("\n" + "="*50)
+    print("🚀 MÔ HÌNH OLS BASELINE (ĐẦY ĐỦ ĐẶC TRƯNG)")
+    print("="*50)
+    
+    # Huấn luyện mô hình từ code Phần 1
     beta, sigma2 = ols_fit(X_train, y_train)
+    
+    # Dự đoán trên tập Test
     y_pred = X_test @ beta
     mae, rmse, r2 = compute_metrics(y_test, y_pred)
     
-    print(f"MAE:  {mae:.4f}")
-    print(f"RMSE: {rmse:.4f}")
-    print(f"R2:   {r2:.4f}")
+    # Kiểm định giả thuyết t cho từng hệ số hồi quy (t-test)
+    se, t_stat, p_values, ci_lower, ci_upper = coef_inference(X_train, y_train, beta, sigma2)
     
-    # Kiểm định ý nghĩa hệ số hồi quy
-    se_beta, t_stats, p_values, confidence_intervals = coef_inference(X_train, y_train, beta, sigma2)
-    print("\nChi tiết hệ số hồi quy OLS Baseline:")
-    print(f"{'Feature':15s} | {'Coefficient':12s} | {'Std Error':10s} | {'t-stat':8s} | {'p-value':8s} | {'95% Conf. Interval':22s}")
-    print("-" * 90)
+    # In báo cáo thống kê
+    print(f"Hiệu năng trên tập Test -> MAE: {mae:.4f} | RMSE: {rmse:.4f} | R²: {r2:.4f}\n")
+    print(f"{'Đặc trưng':<15} | {'Hệ số Beta':<12} | {'Sai số chuẩn':<12} | {'t-stat':<10} | {'Khoảng tin cậy 95%':<20}")
+    print("-" * 80)
+    
+    # Intercept luôn nằm ở index 0
+    ci_int_str = f"[{ci_lower[0]:.3f}, {ci_upper[0]:.3f}]"
+    print(f"{'Intercept':<15} | {beta[0]:<12.4f} | {se[0]:<12.4f} | {t_stat[0]:<10.4f} | {ci_int_str:<20}")
+    
     for i, name in enumerate(feature_names):
-        ci_str = f"[{confidence_intervals[i][0]:.3f}, {confidence_intervals[i][1]:.3f}]"
-        print(f"{name:15s} | {beta[i]:12.4f} | {se_beta[i]:10.4f} | {t_stats[i]:8.3f} | {p_values[i]:8.5f} | {ci_str:22s}")
+        ci_str = f"[{ci_lower[i+1]:.3f}, {ci_upper[i+1]:.3f}]"
+        print(f"{name:<15} | {beta[i+1]:<12.4f} | {se[i+1]:<12.4f} | {t_stat[i+1]:<10.4f} | {ci_str:<20}")
         
     return beta, mae, rmse, r2
 
 
 def run_ols_selection(X_train, X_test, y_train, y_test, feature_names):
-    # Tính VIF phát hiện đa cộng tuyến, loại bỏ biến thừa (ở đây là 'atemp') và fit lại OLS
-    print("\n=== OLS VARIABLE SELECTION ===")
+    """
+    Lựa chọn biến dựa trên chỉ số VIF. Loại bỏ đặc trưng bị đa cộng tuyến.
+    """
+    print("\n" + "="*50)
+    print("🔍 MÔ HÌNH OLS SELECTION (XỬ LÝ ĐA CỘNG TUYẾN)")
+    print("="*50)
     
-    # 1. Tính VIF của các đặc trưng (trừ cột intercept)
-    vif_values = vif(X_train)
-    print("\nGiá trị VIF của các biến:")
-    for name, v_val in zip(feature_names[1:], vif_values):
-        print(f"  {name:12s}: {v_val:.4f}")
+    # Tính chỉ số phóng đại phương sai (VIF)
+    vifs = vif(X_train)
+    print("Kiểm tra VIF trước khi loại bỏ:")
+    for name, v in zip(feature_names, vifs):
+        print(f" - {name:<10}: VIF = {v:.4f} {'(CẢNH BÁO)' if v > 10 else ''}")
         
-    # 2. Thực hiện lựa chọn biến: loại bỏ 'atemp' vì đa cộng tuyến cao với 'temp' (VIF > 10)
-    cols_to_remove = ['atemp'] 
-    print(f"\nLoại bỏ các đặc trưng: {cols_to_remove}")
+    # Tìm index của 'atemp' để loại bỏ vì VIF > 10
+    idx_to_drop = -1
+    for i, name in enumerate(feature_names):
+        if name == 'atemp':
+            idx_to_drop = i
+            break
+            
+    if idx_to_drop != -1:
+        print(f"\n[!] Thực hiện loại bỏ đặc trưng: 'atemp'")
+        # Chú ý: Index trong feature_names cần +1 khi đối chiếu với X_train vì X_train có cột Intercept ở đầu
+        col_to_drop_in_X = idx_to_drop + 1 
+        
+        X_train_red = np.delete(X_train, col_to_drop_in_X, axis=1)
+        X_test_red = np.delete(X_test, col_to_drop_in_X, axis=1)
+        features_reduced = [name for name in feature_names if name != 'atemp']
+    else:
+        print("\nKhông tìm thấy biến cần loại bỏ.")
+        X_train_red, X_test_red, features_reduced = X_train, X_test, feature_names
+        
+    # Huấn luyện lại mô hình OLS trên tập dữ liệu đã rút gọn
+    beta_reduced, sigma2_red = ols_fit(X_train_red, y_train)
+    y_pred_red = X_test_red @ beta_reduced
+    mae_red, rmse_red, r2_red = compute_metrics(y_test, y_pred_red)
     
-    indices_to_keep = [i for i, name in enumerate(feature_names) if name not in cols_to_remove]
-    X_train_reduced = X_train[:, indices_to_keep]
-    X_test_reduced = X_test[:, indices_to_keep]
-    features_reduced = [feature_names[i] for i in indices_to_keep]
-    
-    # Fit mô hình OLS rút gọn
-    beta_reduced, sigma2_reduced = ols_fit(X_train_reduced, y_train)
-    y_pred_reduced = X_test_reduced @ beta_reduced
-    mae_red, rmse_red, r2_red = compute_metrics(y_test, y_pred_reduced)
-    
-    print(f"MAE (Reduced):  {mae_red:.4f}")
-    print(f"RMSE (Reduced): {rmse_red:.4f}")
-    print(f"R2 (Reduced):   {r2_red:.4f}")
+    print(f"Hiệu năng (Rút gọn) -> MAE: {mae_red:.4f} | RMSE: {rmse_red:.4f} | R²: {r2_red:.4f}")
     
     return beta_reduced, mae_red, rmse_red, r2_red, features_reduced
 
 
 def plot_feature_importance(beta, feature_names, save_path=None):
-    # Vẽ biểu đồ thanh thể hiện độ quan trọng của các đặc trưng (bỏ intercept)
+    """
+    Trực quan hóa độ lớn các hệ số hồi quy (Feature Importance).
+    """
+    # Bỏ qua hệ số Intercept ở vị trí 0
     coefs = beta[1:]
-    names = feature_names[1:]
     
-    # Sắp xếp theo độ lớn trị tuyệt đối
-    indices = np.argsort(np.abs(coefs))
+    # Sắp xếp các biến theo giá trị tuyệt đối của hệ số hồi quy để dễ nhìn
+    sorted_indices = np.argsort(np.abs(coefs))
+    sorted_coefs = coefs[sorted_indices]
+    sorted_names = [feature_names[i] for i in sorted_indices]
     
     plt.figure(figsize=(10, 6))
-    plt.barh(range(len(indices)), coefs[indices], align='center', color='steelblue', edgecolor='black', alpha=0.8)
-    plt.yticks(range(len(indices)), [names[i] for i in indices])
-    plt.xlabel('Hệ số hồi quy (Coefficient Value)', fontsize=12)
-    plt.title('Độ quan trọng đặc trưng (Feature Importance) - OLS Baseline', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3)
+    bars = plt.barh(range(len(sorted_coefs)), sorted_coefs, color='royalblue', edgecolor='black', alpha=0.85)
+    plt.yticks(range(len(sorted_coefs)), sorted_names)
+    
+    plt.axvline(x=0, color='red', linestyle='--', linewidth=1.5)
+    plt.xlabel('Trọng số hồi quy (Beta Coefficient)', fontsize=11)
+    plt.title('Mức Độ Đóng Góp Của Các Đặc Trưng Trong Mô Hình OLS', fontsize=14, fontweight='bold')
+    plt.grid(axis='x', linestyle='--', alpha=0.5)
+    
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300)
     plt.show()
 
 
 def plot_residuals(X_train, y_train, beta):
-    # Gọi hàm vẽ 4 biểu đồ kiểm tra các giả định của phần dư
-    print("\nĐang vẽ biểu đồ chẩn đoán phần dư...")
-    residual_plots(X_train, y_train, beta)
+    """
+    Gọi hàm vẽ 4 biểu đồ chẩn đoán phần dư từ Part 1.
+    """
+    print("\n[INFO] Đang kết xuất 4 biểu đồ chẩn đoán phần dư (Residual Analysis)...")
+    try:
+        residual_plots(X_train, y_train, beta)
+    except NameError:
+        print("[LỖI] Chưa import hàm `residual_plots` từ Phần 1. Vui lòng đảm bảo module được liên kết đúng.")
 
 
 def plot_cv_curve(cv_scores, model_name, best_lambda):
