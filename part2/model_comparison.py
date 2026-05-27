@@ -56,7 +56,7 @@ def run_ols_baseline(X_train, X_test, y_train, y_test, feature_names):
     mae, rmse, r2 = compute_metrics(y_test, y_pred)
     
     # Kiểm định giả thuyết t cho từng hệ số hồi quy (t-test)
-    se, t_stat, p_values, ci_lower, ci_upper = coef_inference(X_train, y_train, beta, sigma2)
+    se, t_stat, p_values, confidence_intervals = coef_inference(X_train, y_train, beta, sigma2)
     
     # In báo cáo thống kê
     print(f"Hiệu năng trên tập Test -> MAE: {mae:.4f} | RMSE: {rmse:.4f} | R²: {r2:.4f}\n")
@@ -64,12 +64,12 @@ def run_ols_baseline(X_train, X_test, y_train, y_test, feature_names):
     print("-" * 80)
     
     # Intercept luôn nằm ở index 0
-    ci_int_str = f"[{ci_lower[0]:.3f}, {ci_upper[0]:.3f}]"
+    ci_int_str = f"[{confidence_intervals[0][0]:.3f}, {confidence_intervals[0][1]:.3f}]"
     print(f"{'Intercept':<15} | {beta[0]:<12.4f} | {se[0]:<12.4f} | {t_stat[0]:<10.4f} | {ci_int_str:<20}")
     
-    for i, name in enumerate(feature_names):
-        ci_str = f"[{ci_lower[i+1]:.3f}, {ci_upper[i+1]:.3f}]"
-        print(f"{name:<15} | {beta[i+1]:<12.4f} | {se[i+1]:<12.4f} | {t_stat[i+1]:<10.4f} | {ci_str:<20}")
+    for i, name in enumerate(feature_names[1:], start=1):
+        ci_str = f"[{confidence_intervals[i][0]:.3f}, {confidence_intervals[i][1]:.3f}]"
+        print(f"{name:<15} | {beta[i]:<12.4f} | {se[i]:<12.4f} | {t_stat[i]:<10.4f} | {ci_str:<20}")
         
     return beta, mae, rmse, r2
 
@@ -85,7 +85,7 @@ def run_ols_selection(X_train, X_test, y_train, y_test, feature_names):
     # Tính chỉ số phóng đại phương sai (VIF)
     vifs = vif(X_train)
     print("Kiểm tra VIF trước khi loại bỏ:")
-    for name, v in zip(feature_names, vifs):
+    for name, v in zip(feature_names[1:], vifs):
         print(f" - {name:<10}: VIF = {v:.4f} {'(CẢNH BÁO)' if v > 10 else ''}")
         
     # Tìm index của 'atemp' để loại bỏ vì VIF > 10
@@ -218,8 +218,8 @@ def run_lasso(X_train, X_test, y_train, y_test, feature_names):
     print(f"RMSE: {rmse:.4f}")
     print(f"R2:   {r2:.4f}")
     
-    # 5. Kiểm tra các đặc trưng bị triệt tiêu về 0
-    zero_features = [feature_names[i] for i, b in enumerate(beta_lasso) if abs(b) < 1e-6]
+    # 5. Kiểm tra các đặc trưng bị triệt tiêu về 0 (bỏ intercept)
+    zero_features = [feature_names[i] for i, b in enumerate(beta_lasso) if i > 0 and abs(b) < 1e-6]
     print(f"Các đặc trưng bị triệt tiêu về 0: {zero_features}")
     
     return beta_lasso, best_lambda, mae, rmse, r2
