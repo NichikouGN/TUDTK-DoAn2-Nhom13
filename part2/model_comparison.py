@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import sys
 import os
 
-sys.stdout.reconfigure(encoding='utf-8')
+#sys.stdout.reconfigure(encoding='utf-8')
 
 # Thêm thư mục gốc vào path để import part1
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
