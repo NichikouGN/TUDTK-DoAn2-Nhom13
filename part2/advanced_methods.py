@@ -5,13 +5,13 @@ import numpy as np
 import sys
 import os
 
-sys.stdout.reconfigure(encoding='utf-8')
+#sys.stdout.reconfigure(encoding='utf-8')
 
 # Thêm thư mục gốc vào path để import part1
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from part2.data_pipeline import load_data
-from part2.model_comparison import compute_metrics
+from data_pipeline import load_data
+from model_comparison import compute_metrics
 from part1.ols_implementation import inverse
 
 def rbf_kernel(X1, X2, length_scale=1.0):
